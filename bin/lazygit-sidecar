@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# lazygit-sidecar: run any coding agent with lazygit alongside in tmux.
+#
+# Usage: lazygit-sidecar <command> [args...]
+# See: https://github.com/Predixx/lazygit-sidecar
+
+set -euo pipefail
+
+if [ $# -eq 0 ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  cat <<'EOF'
+Usage: lazygit-sidecar <command> [args...]
+
+Opens a new tmux session with your command on the left and lazygit on the
+right (40%). Works with any CLI: claude, codex, gemini, npm, zsh, ...
+
+Examples:
+  lazygit-sidecar claude
+  lazygit-sidecar codex --dangerously-bypass-approvals-and-sandbox
+  lazygit-sidecar zsh
+EOF
+  [ $# -eq 0 ] && exit 2 || exit 0
+fi
+
+if [ -n "${TMUX:-}" ]; then
+  echo "lazygit-sidecar: already inside a tmux session; detach first (Ctrl-b d)." >&2
+  exit 1
+fi
+
+for tool in tmux lazygit; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "lazygit-sidecar: $tool not found in PATH." >&2
+    exit 1
+  fi
+done
+
+ver=$(tmux -V | awk '{print $2}')
+case "$ver" in
+  3.0*|2.*|1.*|0.*)
+    echo "lazygit-sidecar: tmux 3.1+ required (found $ver)." >&2
+    exit 1
+    ;;
+esac
+
+session="lazygit-sidecar-$$"
+
+# Quote each arg so it survives tmux -> shell re-parsing.
+printf -v cmd '%q ' "$@"
+
+tmux new-session -d -s "$session" "$cmd"
+tmux split-window -h -l 40% -t "$session" lazygit
+tmux select-pane -L -t "$session"
+exec tmux attach -t "$session"

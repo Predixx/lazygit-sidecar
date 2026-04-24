@@ -1,64 +1,119 @@
-# agent-deck-lazygit
+# lazygit-sidecar
 
-Interactive macOS installer that adds a lazygit split-pane to every
-[agent-deck](https://github.com/asheshgoplani/agent-deck) session you
-attach to. Left pane runs your coding agent (Claude Code, Codex,
-Gemini, ...), right pane runs [lazygit](https://github.com/jesseduffield/lazygit).
+Persistent [lazygit](https://github.com/jesseduffield/lazygit) sidecar for any coding agent in tmux.
 
-## What it does
+Run `lazygit-sidecar <command>` and get your command on the left and lazygit on the right, side by side, in a single tmux session. Works with Claude Code CLI, Codex CLI, Gemini CLI, plain zsh, or anything else you want to pair with a live git view.
 
-Adds a `client-attached` tmux hook that fires whenever you attach to a
-tmux session whose name starts with `agentdeck_`. If that session's
-window has exactly one pane, the hook splits it horizontally, puts
-lazygit on the right (40%), and selects the left pane.
+## Demo
 
-Idempotent on every level:
-- already-split sessions are skipped, so re-attaching does not stack panes.
-- the tmux config is wrapped in a `%if` guard so re-sourcing does not
-  duplicate the hook.
-- the hook uses `set-hook -ga` (append), which coexists with any
-  existing `client-attached` hooks you already have.
+```sh
+lazygit-sidecar claude
+lazygit-sidecar codex --dangerously-bypass-approvals-and-sandbox
+lazygit-sidecar zsh
+```
 
-Scoped: only sessions whose name starts with `agentdeck_` get the
-lazygit pane. Other tmux sessions are not touched.
+## Requirements
 
-## Prerequisites
+- tmux 3.1+ (needs the `-l 40%` split syntax)
+- lazygit
+- bash 4+ (the installer uses `printf -v`)
 
-- macOS (tested on Apple Silicon, should work on Intel too)
-- Homebrew
-- tmux 3.1+
-- agent-deck already installed
-- zsh (default on modern macOS) for the optional `ad` shortcut
+macOS is the primary target. Linux works fine if you install tmux and lazygit yourself; the `install.sh` convenience paths assume Homebrew.
 
 ## Install
+
+### Quick (macOS)
+
+```sh
+git clone https://github.com/Predixx/lazygit-sidecar.git
+cd lazygit-sidecar
+./install.sh --core
+```
+
+Installs lazygit (via Homebrew if missing) and copies `bin/lazygit-sidecar` to `~/.local/bin/`. The installer warns you if `~/.local/bin` is not on your PATH and offers to add one line to your `~/.zshrc`.
+
+### Interactive
 
 ```sh
 ./install.sh
 ```
 
-Every step explains what it will do and asks for confirmation. Nothing
-happens without a `y`. Run the script again any time: it detects what
-is already installed and skips those steps.
+Walks through every step with a confirmation prompt. Same end state as `--core`, but you see exactly what is happening.
+
+### Manual
+
+```sh
+install -m 0755 bin/lazygit-sidecar ~/.local/bin/lazygit-sidecar
+# ensure ~/.local/bin is on PATH
+```
+
+## Usage
+
+Pass any command. It runs in the left pane; lazygit runs in the right pane.
+
+```sh
+lazygit-sidecar claude
+lazygit-sidecar codex --some-flag
+lazygit-sidecar gemini
+lazygit-sidecar npm run dev
+lazygit-sidecar zsh
+```
+
+When the left command exits, its pane closes. Quit lazygit with `q`. When both panes are gone the tmux session ends and you return to your shell.
+
+`lazygit-sidecar` refuses to run inside an existing tmux session (it does not nest). Detach the outer tmux first (`Ctrl-b d`) and try again.
+
+## agent-deck integration (optional)
+
+If you use [agent-deck](https://github.com/asheshgoplani/agent-deck), you can install a tmux `client-attached` hook so that every agent-deck session automatically gets a lazygit pane on attach, no `lazygit-sidecar` command needed:
+
+```sh
+./install.sh --agent-deck
+```
+
+Appends a marker-scoped block to `~/.tmux.conf` (guarded by `%if`, uses `set-hook -ga`, coexists with existing hooks) and adds an optional `ad()` zsh alias to `~/.zshrc`.
+
+The hook is idempotent: sessions that already have two or more panes are skipped, so re-attaching never stacks extra panes.
 
 ## Uninstall
 
 ```sh
-./install.sh uninstall
+./install.sh --uninstall              # interactive
+./install.sh --uninstall-core         # remove the binary only
+./install.sh --uninstall-agent-deck   # remove hook + alias only
 ```
 
-Removes only the blocks the installer added (delimited by markers).
-Hand-written tmux/zsh config is preserved.
+Uninstall is marker-scoped. Only the blocks the installer added get removed. Hand-written tmux/zsh config is preserved.
 
-## What gets changed
+lazygit itself stays installed (it is a useful standalone tool). Remove it yourself with `brew uninstall lazygit` if you want.
 
-- `~/.tmux.conf` — a small `set-hook` block, appended between markers.
-- `~/.zshrc` — an `ad()` shell function, appended between markers (optional).
-- Homebrew installs `lazygit` if missing.
+## Troubleshooting
 
-Nothing inside agent-deck itself is modified, so this survives
-agent-deck updates.
+**`lazygit-sidecar: command not found`** — `~/.local/bin` is likely not on your PATH. Add to `~/.zshrc`:
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+Then `source ~/.zshrc`.
 
-## How to rebuild this by hand
+**`already inside a tmux session`** — `lazygit-sidecar` does not nest. Detach the outer tmux first with `Ctrl-b d`.
 
-See `install.sh` — the two code blocks it appends are self-contained.
-You can copy them out and paste them into your configs manually.
+**`tmux 3.1+ required`** — the `-l 40%` split syntax needs tmux 3.1 or newer. Upgrade with `brew upgrade tmux`.
+
+**Split is fine but lazygit shows "not a git repository"** — you launched `lazygit-sidecar` from a non-git directory. Change into a git repo first, or use it in a git worktree.
+
+## How it works
+
+One script, ~40 lines:
+
+1. Sanity checks (`$TMUX` empty, tmux and lazygit on PATH, tmux version).
+2. `tmux new-session -d` creates a detached session with your command in pane 0.
+3. `tmux split-window -h -l 40%` adds lazygit on the right.
+4. `tmux attach` hands you the session.
+
+Nothing else. No daemons, no background processes, no config files. When the session ends you are back in your plain terminal.
+
+The agent-deck integration is a separate tmux hook that triggers the same layout on session attach. See `install.sh` for the exact block it appends.
+
+## License
+
+[MIT](LICENSE).

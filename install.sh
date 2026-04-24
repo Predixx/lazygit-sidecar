@@ -1,20 +1,32 @@
 #!/usr/bin/env bash
-# Interactive installer for the agent-deck + lazygit split-pane integration.
-# Every step explains what it will do and asks for confirmation.
+# lazygit-sidecar installer.
 #
-# Usage:
-#   ./install.sh              # install
-#   ./install.sh uninstall    # remove everything it added
+# Modes:
+#   ./install.sh                        Interactive install wizard (default).
+#   ./install.sh --core                 Install lazygit (brew) + copy binary.
+#   ./install.sh --agent-deck           Install tmux hook + ad() zsh alias.
+#   ./install.sh --all                  --core then --agent-deck.
+#   ./install.sh --uninstall            Interactive uninstall wizard.
+#   ./install.sh --uninstall-core       Remove the binary only.
+#   ./install.sh --uninstall-agent-deck Remove tmux hook + ad() alias.
+#   ./install.sh --help                 Show usage.
+#
+# Marker-scoped: nothing outside installer-added blocks gets touched.
 
 set -uo pipefail
 
-MARKER_BEGIN="# >>> agent-deck lazygit split BEGIN"
-MARKER_END="# <<< agent-deck lazygit split END"
+REPO_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+BIN_SRC="$REPO_DIR/bin/lazygit-sidecar"
+BIN_DEST_DIR="$HOME/.local/bin"
+BIN_DEST="$BIN_DEST_DIR/lazygit-sidecar"
 
 TMUX_CONF="$HOME/.tmux.conf"
 ZSHRC="$HOME/.zshrc"
 
-# ---------- helpers ----------
+MARKER_BEGIN="# >>> lazygit-sidecar agent-deck integration BEGIN"
+MARKER_END="# <<< lazygit-sidecar agent-deck integration END"
+
+# ---------- tiny helpers ----------
 
 step() {
   echo
@@ -29,9 +41,23 @@ confirm() {
   [[ "$answer" =~ ^[Yy]$ ]]
 }
 
-has_block() {
-  grep -qF "$MARKER_BEGIN" "$1" 2>/dev/null
+path_contains() {
+  case ":$PATH:" in
+    *":$1:"*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
+
+tmux_version_ok() {
+  local ver
+  ver=$(tmux -V 2>/dev/null | awk '{print $2}')
+  case "$ver" in
+    3.0*|2.*|1.*|0.*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+has_block() { grep -qF "$MARKER_BEGIN" "$1" 2>/dev/null; }
 
 append_block() {
   local file="$1" content="$2"
@@ -39,9 +65,9 @@ append_block() {
     || return 1
 }
 
-# Remove exactly the first complete MARKER_BEGIN..MARKER_END block.
-# Refuses to touch the file if either marker is missing or order is broken.
-# Uses cat-redirect so that symlinked dotfiles keep their symlink.
+# Remove first complete MARKER_BEGIN..MARKER_END block. Refuses if either
+# marker is missing or the order is reversed. Uses cat-redirect so
+# symlinked dotfiles keep their symlink target.
 remove_block() {
   local file="$1"
   [ -f "$file" ] || return 0
@@ -50,11 +76,11 @@ remove_block() {
   begin_line=$(grep -nF "$MARKER_BEGIN" "$file" | head -1 | cut -d: -f1)
   end_line=$(grep -nF "$MARKER_END" "$file" | head -1 | cut -d: -f1)
   if [ -z "$begin_line" ] || [ -z "$end_line" ]; then
-    echo "Warnung: $file enthaelt BEGIN- aber keinen END-Marker. Datei unveraendert." >&2
+    echo "warn: $file has BEGIN without END; file unchanged." >&2
     return 1
   fi
   if [ "$end_line" -le "$begin_line" ]; then
-    echo "Warnung: Marker in $file sind in falscher Reihenfolge. Datei unveraendert." >&2
+    echo "warn: markers in $file are out of order; file unchanged." >&2
     return 1
   fi
   local tmp
@@ -63,86 +89,58 @@ remove_block() {
     rm -f "$tmp"
     return 1
   fi
-  # cat-redirect preserves symlinks and file ownership/mode.
   cat "$tmp" > "$file" && rm -f "$tmp"
 }
 
-require() {
-  local cmd="$1"
-  if command -v "$cmd" >/dev/null 2>&1; then
-    printf '  OK  %-12s %s\n' "$cmd" "$(command -v "$cmd")"
-  else
-    printf '  ??  %-12s NOT FOUND\n' "$cmd"
+# ---------- non-interactive actions ----------
+
+install_core() {
+  if ! command -v tmux >/dev/null 2>&1; then
+    echo "error: tmux is not installed. macOS: brew install tmux" >&2
     return 1
+  fi
+  if ! tmux_version_ok; then
+    echo "error: tmux 3.1+ required (found $(tmux -V))." >&2
+    return 1
+  fi
+
+  if command -v lazygit >/dev/null 2>&1; then
+    echo "lazygit: $(command -v lazygit)"
+  else
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "error: lazygit missing and brew unavailable. Install lazygit manually." >&2
+      return 1
+    fi
+    echo "Installing lazygit via Homebrew..."
+    brew install lazygit || return 1
+  fi
+
+  mkdir -p "$BIN_DEST_DIR"
+  install -m 0755 "$BIN_SRC" "$BIN_DEST" || return 1
+  echo "installed: $BIN_DEST"
+
+  if ! path_contains "$BIN_DEST_DIR"; then
+    cat <<EOF
+
+note: $BIN_DEST_DIR is not on your PATH.
+      Add this line to ~/.zshrc (or ~/.bashrc):
+
+          export PATH="\$HOME/.local/bin:\$PATH"
+EOF
   fi
 }
 
-# ---------- install steps ----------
-
-install_flow() {
-  step "Schritt 1 von 5: Prerequisites pruefen"
-  cat <<EOF
-Ich pruefe nur (lesend), ob diese Tools vorhanden sind:
-  - tmux       (Terminal-Multiplexer, 3.1+ erforderlich)
-  - agent-deck (das ist was wir erweitern)
-  - brew       (damit ich lazygit installieren kann falls es fehlt)
-
-Es wird NICHTS geaendert oder installiert in diesem Schritt.
-EOF
-  if confirm "Weiter?"; then
-    local ok=1
-    require tmux       || ok=0
-    require agent-deck || ok=0
-    require brew       || ok=0
-    if [ "$ok" -ne 1 ]; then
-      echo "Fehlende Tools bitte zuerst installieren, dann erneut starten."
-      exit 1
-    fi
-    local tmux_ver
-    tmux_ver=$(tmux -V | awk '{print $2}')
-    echo "  tmux version: $tmux_ver"
-    case "$tmux_ver" in
-      3.0*|2.*|1.*|0.*)
-        echo "tmux 3.1 oder neuer wird benoetigt (wegen '-l 40%' Syntax)."
-        exit 1
-        ;;
-    esac
-  else
-    echo "Abgebrochen."
-    exit 0
+install_agent_deck() {
+  if ! command -v lazygit >/dev/null 2>&1; then
+    echo "error: lazygit not found; run --core first." >&2
+    return 1
   fi
-
-  step "Schritt 2 von 5: lazygit installieren"
   local lazygit_path
-  if command -v lazygit >/dev/null 2>&1; then
-    lazygit_path=$(command -v lazygit)
-    echo "lazygit ist bereits da: $lazygit_path"
-    echo "Schritt uebersprungen."
-  else
-    cat <<EOF
-lazygit ist nicht installiert. Ich wuerde folgenden Befehl ausfuehren:
+  lazygit_path=$(command -v lazygit)
 
-  brew install lazygit
-
-Das laedt und installiert lazygit 0.x (MIT-lizenziert, Open Source,
-https://github.com/jesseduffield/lazygit).
-EOF
-    if confirm "Installieren?"; then
-      brew install lazygit || { echo "brew install fehlgeschlagen."; exit 1; }
-      lazygit_path=$(command -v lazygit)
-    else
-      echo "Ohne lazygit macht der Rest keinen Sinn. Abbruch."
-      exit 1
-    fi
-  fi
-
-  step "Schritt 3 von 5: tmux-Hook in ~/.tmux.conf"
-  # -ga appends a new hook slot instead of overwriting the existing slot 0.
-  # The %if guard prevents duplicate registration when tmux.conf is sourced
-  # multiple times (e.g. on server restart after this file is already loaded).
   local tmux_block
   tmux_block=$(cat <<EOF
-%if "#{==:#{@agent_deck_lazygit_installed},1}"
+%if "#{==:#{@lazygit_sidecar_installed},1}"
 %else
 set-hook -ga client-attached {
   if-shell -F '#{&&:#{m:agentdeck_*,#{session_name}},#{==:#{window_panes},1}}' {
@@ -150,188 +148,219 @@ set-hook -ga client-attached {
     select-pane -L
   }
 }
-set-option -g @agent_deck_lazygit_installed 1
+set-option -g @lazygit_sidecar_installed 1
 %endif
 EOF
 )
+
   if has_block "$TMUX_CONF"; then
-    echo "In $TMUX_CONF ist der Block bereits eingetragen. Schritt uebersprungen."
+    echo "$TMUX_CONF already contains the integration block; skipping tmux part."
   else
-    cat <<EOF
-Ich haenge folgenden Block ans Ende von $TMUX_CONF an (wird neu angelegt
-falls die Datei nicht existiert). Bestehende Zeilen werden NICHT veraendert.
-
--------- Block --------
-$MARKER_BEGIN
-$tmux_block
-$MARKER_END
------------------------
-
-Wirkung: Wenn du dich an eine tmux-Session anhaengst deren Name mit
-'agentdeck_' beginnt und die genau 1 Pane hat, wird rechts zu 40% lazygit
-gestartet. Andere tmux-Sessions bleiben unveraendert.
-EOF
-    if confirm "Anhaengen?"; then
-      if append_block "$TMUX_CONF" "$tmux_block"; then
-        echo "Angehaengt."
-      else
-        echo "Fehler beim Anhaengen an $TMUX_CONF." >&2
-        exit 1
-      fi
-    else
-      echo "Uebersprungen."
+    append_block "$TMUX_CONF" "$tmux_block" || {
+      echo "error: failed to append to $TMUX_CONF" >&2
+      return 1
+    }
+    echo "appended tmux hook to $TMUX_CONF"
+    if tmux info >/dev/null 2>&1; then
+      tmux source-file "$TMUX_CONF" 2>/dev/null && echo "reloaded running tmux server."
     fi
   fi
 
-  step "Schritt 4 von 5: tmux-Server neu laden"
-  if ! tmux info >/dev/null 2>&1; then
-    echo "Es laeuft aktuell kein tmux-Server. Die Config greift automatisch"
-    echo "beim naechsten tmux-Start. Schritt uebersprungen."
-  else
-    cat <<EOF
-Damit der Hook sofort aktiv wird, muss der laufende tmux-Server die neue
-Config laden:
-
-  tmux source-file $TMUX_CONF
-
-Achtung: source-file fuehrt die KOMPLETTE tmux-Config neu aus, nicht nur
-unseren Block. Das ist normal (so funktioniert tmux), aber wenn deine
-tmux.conf Seiteneffekte hat (z.B. Key-Bindings, die bei jedem Reload
-zurueckgesetzt werden), solltest du das wissen. Bestehende Sessions
-bleiben erhalten.
-EOF
-    if confirm "Jetzt reloaden?"; then
-      tmux source-file "$TMUX_CONF" && echo "Geladen."
-    else
-      echo "Uebersprungen (wird beim naechsten tmux-Start aktiv)."
-    fi
-  fi
-
-  step "Schritt 5 von 5: Shortcut 'ad' in ~/.zshrc (optional)"
   local zsh_block='ad() {
   command agent-deck launch -c claude "$@"
 }'
   if has_block "$ZSHRC"; then
-    echo "In $ZSHRC ist der Block bereits eingetragen. Schritt uebersprungen."
+    echo "$ZSHRC already contains the integration block; skipping zsh part."
   else
-    cat <<EOF
-Optionaler Shortcut. Erlaubt dir Sessions direkt aus dem Terminal zu
-starten statt ueber die agent-deck TUI:
+    append_block "$ZSHRC" "$zsh_block" && echo "appended ad() alias to $ZSHRC"
+  fi
+}
 
--------- Block --------
-$MARKER_BEGIN
-$zsh_block
-$MARKER_END
------------------------
+uninstall_core() {
+  if [ -f "$BIN_DEST" ]; then
+    rm -f "$BIN_DEST" && echo "removed $BIN_DEST"
+  else
+    echo "$BIN_DEST not present; nothing to remove."
+  fi
+}
 
-Wirkung: 'ad .' startet eine neue Claude-Session im current dir. Der Split
-selber kommt vom tmux-Hook oben, nicht von dieser Function. Wenn du die
-TUI ohnehin bevorzugst, kannst du diesen Schritt ueberspringen.
-EOF
-    if confirm "Anhaengen?"; then
-      if append_block "$ZSHRC" "$zsh_block"; then
-        echo "Angehaengt. Neues Terminal oeffnen oder: source $ZSHRC"
-      else
-        echo "Fehler beim Anhaengen an $ZSHRC." >&2
-        exit 1
+uninstall_agent_deck() {
+  local did=0
+  if has_block "$TMUX_CONF"; then
+    if remove_block "$TMUX_CONF"; then
+      echo "removed block from $TMUX_CONF"
+      did=1
+      if tmux info >/dev/null 2>&1; then
+        local slot
+        slot=$(tmux show-hooks -g 2>/dev/null \
+          | awk -F'[][]' '/^client-attached\[[0-9]+\].*agentdeck_/ {print $2; exit}')
+        [ -n "$slot" ] && tmux set-hook -gu "client-attached[$slot]" 2>/dev/null
+        tmux set-option -gu @lazygit_sidecar_installed 2>/dev/null || true
       fi
+    fi
+  fi
+  if has_block "$ZSHRC"; then
+    if remove_block "$ZSHRC"; then
+      echo "removed block from $ZSHRC"
+      did=1
+    fi
+  fi
+  [ $did -eq 0 ] && echo "no integration blocks found; nothing to remove."
+}
+
+# ---------- interactive flow ----------
+
+interactive_install() {
+  step "Step 1/4: Prerequisites"
+  cat <<EOF
+Checking (read-only):
+  - tmux       (3.1+ required)
+  - lazygit    (will be brew-installed if missing)
+  - brew       (only needed if lazygit is missing)
+EOF
+  confirm "Continue?" || { echo "Aborted."; exit 0; }
+
+  if command -v tmux >/dev/null 2>&1; then
+    echo "  OK  tmux      $(command -v tmux) ($(tmux -V))"
+    tmux_version_ok || { echo "tmux 3.1+ required. Abort."; exit 1; }
+  else
+    echo "  --  tmux      NOT FOUND"
+    echo "Install tmux first (macOS: brew install tmux). Abort."
+    exit 1
+  fi
+  if command -v lazygit >/dev/null 2>&1; then
+    echo "  OK  lazygit   $(command -v lazygit)"
+  else
+    echo "  !!  lazygit   will be installed in step 2"
+  fi
+  if command -v brew >/dev/null 2>&1; then
+    echo "  OK  brew      $(command -v brew)"
+  else
+    echo "  !!  brew      not found; required only if lazygit is missing"
+  fi
+
+  step "Step 2/4: Install lazygit"
+  if command -v lazygit >/dev/null 2>&1; then
+    echo "lazygit already installed; skip."
+  else
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "brew not found; install lazygit manually (https://github.com/jesseduffield/lazygit) then re-run."
+      exit 1
+    fi
+    if confirm "Run: brew install lazygit?"; then
+      brew install lazygit || { echo "brew install failed."; exit 1; }
     else
-      echo "Uebersprungen."
+      echo "Cannot continue without lazygit. Abort."
+      exit 1
     fi
   fi
 
-  step "Fertig"
+  step "Step 3/4: Install lazygit-sidecar binary"
   cat <<EOF
-Installation abgeschlossen.
+I will copy:
+  $BIN_SRC
+to:
+  $BIN_DEST
+(with mode 0755). The parent directory will be created if missing.
+EOF
+  if confirm "Install?"; then
+    mkdir -p "$BIN_DEST_DIR"
+    install -m 0755 "$BIN_SRC" "$BIN_DEST" || { echo "copy failed."; exit 1; }
+    echo "installed: $BIN_DEST"
+  else
+    echo "Skipped."
+  fi
 
-Naechste Schritte:
-  1. Neues Terminal oeffnen (oder 'source ~/.zshrc' falls Schritt 5 gemacht)
-  2. agent-deck starten
-  3. Eine Session attachen (neu oder bestehend)
-  4. Rechts erscheint lazygit, links laeuft Claude / Codex / etc.
+  if ! path_contains "$BIN_DEST_DIR"; then
+    echo
+    cat <<EOF
+$BIN_DEST_DIR is NOT on your PATH. I can append this line to ~/.zshrc:
 
-Zum Entfernen: $0 uninstall
+  export PATH="\$HOME/.local/bin:\$PATH"
+EOF
+    if confirm "Append?"; then
+      printf '\n# lazygit-sidecar: ensure ~/.local/bin is on PATH\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$ZSHRC"
+      echo "Appended. Open a new terminal or: source ~/.zshrc"
+    else
+      echo "Skipped. Make sure $BIN_DEST_DIR is on PATH or the command will not be found."
+    fi
+  fi
+
+  step "Step 4/4: agent-deck integration (optional)"
+  cat <<EOF
+Only for agent-deck users. Adds a tmux client-attached hook that
+auto-splits every agent-deck session (name prefix 'agentdeck_') so
+lazygit appears on the right. Also adds an 'ad' zsh alias.
+
+Skip this step if you do not use agent-deck.
+EOF
+  if confirm "Install agent-deck integration?"; then
+    install_agent_deck || exit 1
+  else
+    echo "Skipped."
+  fi
+
+  step "Done"
+  cat <<EOF
+Installation complete. Test:
+
+  lazygit-sidecar zsh
+
+(If PATH was updated, open a new terminal or run: source ~/.zshrc)
+
+Uninstall later with: $0 --uninstall
 EOF
 }
 
-# ---------- uninstall steps ----------
-
-uninstall_flow() {
-  step "Uninstall Schritt 1 von 3: ad() aus ~/.zshrc"
-  if has_block "$ZSHRC"; then
-    echo "Der markierte Block wird aus $ZSHRC entfernt (nur zwischen den Markern)."
-    if confirm "Entfernen?"; then
-      if remove_block "$ZSHRC"; then
-        echo "Entfernt."
-      else
-        echo "Fehler beim Entfernen. Datei wurde nicht geaendert." >&2
-        return 1
-      fi
+interactive_uninstall() {
+  step "Uninstall step 1/2: lazygit-sidecar binary"
+  if [ -f "$BIN_DEST" ]; then
+    echo "Will remove: $BIN_DEST"
+    if confirm "Remove?"; then
+      rm -f "$BIN_DEST" && echo "removed."
     else
-      echo "Uebersprungen."
+      echo "Skipped."
     fi
   else
-    echo "Kein Block in $ZSHRC gefunden. Schritt uebersprungen."
+    echo "$BIN_DEST not present; skip."
   fi
 
-  step "Uninstall Schritt 2 von 3: tmux-Hook aus ~/.tmux.conf"
-  if has_block "$TMUX_CONF"; then
-    echo "Der markierte Block wird aus $TMUX_CONF entfernt."
-    if confirm "Entfernen?"; then
-      if ! remove_block "$TMUX_CONF"; then
-        echo "Fehler beim Entfernen. Datei wurde nicht geaendert." >&2
-        return 1
-      fi
-      echo "Entfernt."
-      if tmux info >/dev/null 2>&1; then
-        if confirm "Hook sofort aus laufendem tmux-Server deregistrieren?"; then
-          # Our hook might be at any index because install uses -ga append.
-          # Find the slot whose body references our pattern and remove only that one.
-          local slot
-          slot=$(tmux show-hooks -g 2>/dev/null \
-            | awk -F'[][]' '/^client-attached\[[0-9]+\].*agentdeck_/ {print $2; exit}')
-          if [ -n "$slot" ]; then
-            tmux set-hook -gu "client-attached[$slot]" 2>/dev/null
-          fi
-          tmux set-option -gu @agent_deck_lazygit_installed 2>/dev/null || true
-          echo "Deregistriert${slot:+ (slot [$slot])}."
-        fi
-      fi
+  step "Uninstall step 2/2: agent-deck integration"
+  if has_block "$TMUX_CONF" || has_block "$ZSHRC"; then
+    if confirm "Remove integration blocks from ~/.tmux.conf and ~/.zshrc?"; then
+      uninstall_agent_deck
     else
-      echo "Uebersprungen."
+      echo "Skipped."
     fi
   else
-    echo "Kein Block in $TMUX_CONF gefunden. Schritt uebersprungen."
+    echo "No integration blocks found; skip."
   fi
 
-  step "Uninstall Schritt 3 von 3: lazygit deinstallieren (optional)"
-  if command -v lazygit >/dev/null 2>&1; then
-    cat <<EOF
-lazygit ist noch installiert. Es ist ein nuetzliches Standalone-Tool,
-also belasse ich es by default. Wenn du es trotzdem entfernen willst:
-
+  step "Done"
+  cat <<EOF
+lazygit stays installed (standalone tool). Remove with:
   brew uninstall lazygit
 EOF
-    if confirm "brew uninstall lazygit ausfuehren?"; then
-      brew uninstall lazygit
-    else
-      echo "lazygit bleibt installiert."
-    fi
-  else
-    echo "lazygit nicht gefunden. Schritt uebersprungen."
-  fi
+}
 
-  step "Uninstall fertig"
-  echo "Die Integration ist entfernt. Neues Terminal oeffnen damit 'ad' weg ist."
+usage() {
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # ---------- dispatch ----------
 
-case "${1:-install}" in
-  install)   install_flow ;;
-  uninstall) uninstall_flow ;;
+case "${1:-}" in
+  "")                     interactive_install ;;
+  --core)                 install_core ;;
+  --agent-deck)           install_agent_deck ;;
+  --all)                  install_core && install_agent_deck ;;
+  --uninstall)            interactive_uninstall ;;
+  --uninstall-core)       uninstall_core ;;
+  --uninstall-agent-deck) uninstall_agent_deck ;;
+  --help|-h)              usage ;;
   *)
-    echo "Usage: $0 [install|uninstall]"
+    echo "unknown option: $1" >&2
+    usage >&2
     exit 2
     ;;
 esac
