@@ -47,6 +47,10 @@ session="lazygit-sidecar-$$"
 printf -v cmd '%q ' "$@"
 
 tmux new-session -d -s "$session" "$cmd"
-tmux split-window -h -l 40% -t "$session" lazygit
-tmux select-pane -L -t "$session"
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  tmux split-window -h -l 40% -t "$session" lazygit
+  tmux select-pane -L -t "$session"
+fi
+
 exec tmux attach -t "$session"

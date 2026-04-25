@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# lazygit-sidecar-hook: called by a tmux client-attached hook.
+# Checks if the attached session is an agent-deck session, has only one pane,
+# and is inside a git repo. If all true, splits the window and opens lazygit.
+
+session=$(tmux display-message -p '#{session_name}')
+panes=$(tmux display-message -p '#{window_panes}')
+path=$(tmux display-message -p '#{pane_current_path}')
+
+[[ "$session" != agentdeck_* ]] && exit 0
+[ "$panes" != "1" ] && exit 0
+git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+
+tmux split-window -h -l 40% -c "$path" lazygit
+tmux select-pane -L

@@ -138,10 +138,16 @@ install_agent_deck() {
   local lazygit_path
   lazygit_path=$(command -v lazygit)
 
+  # The hook calls an external script to avoid nested-quoting hell in tmux.
   # Fixed index [99] so re-sourcing overwrites (idempotent, no accumulation).
-  # Single-line syntax because tmux's %if/%else breaks with { } blocks.
+  install -m 0755 "$REPO_DIR/bin/lazygit-sidecar-hook" "$BIN_DEST_DIR/lazygit-sidecar-hook" || {
+    echo "error: failed to install hook script." >&2
+    return 1
+  }
+  echo "installed: $BIN_DEST_DIR/lazygit-sidecar-hook"
+
   local tmux_block
-  tmux_block="set-hook -g 'client-attached[99]' 'if-shell -F \"#{&&:#{m:agentdeck_*,#{session_name}},#{==:#{window_panes},1}}\" \"split-window -h -l 40% $lazygit_path ; select-pane -L\"'"
+  tmux_block="set-hook -g 'client-attached[99]' 'run-shell \"$BIN_DEST_DIR/lazygit-sidecar-hook\"'"
 
   if has_block "$TMUX_CONF"; then
     echo "$TMUX_CONF already contains the integration block; skipping tmux part."
@@ -171,6 +177,9 @@ uninstall_core() {
     rm -f "$BIN_DEST" && echo "removed $BIN_DEST"
   else
     echo "$BIN_DEST not present; nothing to remove."
+  fi
+  if [ -f "$BIN_DEST_DIR/lazygit-sidecar-hook" ]; then
+    rm -f "$BIN_DEST_DIR/lazygit-sidecar-hook" && echo "removed $BIN_DEST_DIR/lazygit-sidecar-hook"
   fi
 }
 
