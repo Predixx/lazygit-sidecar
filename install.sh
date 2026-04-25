@@ -138,20 +138,10 @@ install_agent_deck() {
   local lazygit_path
   lazygit_path=$(command -v lazygit)
 
+  # Fixed index [99] so re-sourcing overwrites (idempotent, no accumulation).
+  # Single-line syntax because tmux's %if/%else breaks with { } blocks.
   local tmux_block
-  tmux_block=$(cat <<EOF
-%if "#{==:#{@lazygit_sidecar_installed},1}"
-%else
-set-hook -ga client-attached {
-  if-shell -F '#{&&:#{m:agentdeck_*,#{session_name}},#{==:#{window_panes},1}}' {
-    split-window -h -l 40% '$lazygit_path'
-    select-pane -L
-  }
-}
-set-option -g @lazygit_sidecar_installed 1
-%endif
-EOF
-)
+  tmux_block="set-hook -g 'client-attached[99]' 'if-shell -F \"#{&&:#{m:agentdeck_*,#{session_name}},#{==:#{window_panes},1}}\" \"split-window -h -l 40% $lazygit_path ; select-pane -L\"'"
 
   if has_block "$TMUX_CONF"; then
     echo "$TMUX_CONF already contains the integration block; skipping tmux part."
@@ -191,11 +181,7 @@ uninstall_agent_deck() {
       echo "removed block from $TMUX_CONF"
       did=1
       if tmux info >/dev/null 2>&1; then
-        local slot
-        slot=$(tmux show-hooks -g 2>/dev/null \
-          | awk -F'[][]' '/^client-attached\[[0-9]+\].*agentdeck_/ {print $2; exit}')
-        [ -n "$slot" ] && tmux set-hook -gu "client-attached[$slot]" 2>/dev/null
-        tmux set-option -gu @lazygit_sidecar_installed 2>/dev/null || true
+        tmux set-hook -gu 'client-attached[99]' 2>/dev/null
       fi
     fi
   fi
