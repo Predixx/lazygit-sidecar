@@ -4,6 +4,8 @@ Persistent [lazygit](https://github.com/jesseduffield/lazygit) sidecar for any c
 
 Run `lazygit-sidecar <command>` and get your command on the left and lazygit on the right, side by side, in a single tmux session. Works with Claude Code CLI, Codex CLI, Gemini CLI, plain zsh, or anything else you want to pair with a live git view.
 
+If the working directory is not inside a git repository, lazygit is skipped and your command runs full-width.
+
 ## Demo
 
 ```sh
@@ -16,7 +18,7 @@ lazygit-sidecar zsh
 
 - tmux 3.1+ (needs the `-l 40%` split syntax)
 - lazygit
-- bash 4+ (the installer uses `printf -v`)
+- bash 4+
 
 macOS is the primary target. Linux works fine if you install tmux and lazygit yourself; the `install.sh` convenience paths assume Homebrew.
 
@@ -30,7 +32,7 @@ cd lazygit-sidecar
 ./install.sh --core
 ```
 
-Installs lazygit (via Homebrew if missing) and copies `bin/lazygit-sidecar` to `~/.local/bin/`. The installer warns you if `~/.local/bin` is not on your PATH and offers to add one line to your `~/.zshrc`.
+Installs lazygit (via Homebrew if missing) and copies `bin/lazygit-sidecar` to `~/.local/bin/`. The installer warns you if `~/.local/bin` is not on your PATH and offers to add it.
 
 ### Interactive
 
@@ -38,7 +40,7 @@ Installs lazygit (via Homebrew if missing) and copies `bin/lazygit-sidecar` to `
 ./install.sh
 ```
 
-Walks through every step with a confirmation prompt. Same end state as `--core`, but you see exactly what is happening.
+Walks through every step with a confirmation prompt before anything changes.
 
 ### Manual
 
@@ -49,7 +51,7 @@ install -m 0755 bin/lazygit-sidecar ~/.local/bin/lazygit-sidecar
 
 ## Usage
 
-Pass any command. It runs in the left pane; lazygit runs in the right pane.
+Pass any command. It runs in the left pane; lazygit runs in the right pane (40%).
 
 ```sh
 lazygit-sidecar claude
@@ -59,60 +61,70 @@ lazygit-sidecar npm run dev
 lazygit-sidecar zsh
 ```
 
+The lazygit pane only appears when the working directory is inside a git repository. In non-git directories, your command runs in tmux at full width.
+
 When the left command exits, its pane closes. Quit lazygit with `q`. When both panes are gone the tmux session ends and you return to your shell.
 
 `lazygit-sidecar` refuses to run inside an existing tmux session (it does not nest). Detach the outer tmux first (`Ctrl-b d`) and try again.
 
 ## agent-deck integration (optional)
 
-If you use [agent-deck](https://github.com/asheshgoplani/agent-deck), you can install a tmux `client-attached` hook so that every agent-deck session automatically gets a lazygit pane on attach, no `lazygit-sidecar` command needed:
+If you use [agent-deck](https://github.com/asheshgoplani/agent-deck), you can install a tmux `client-attached` hook so that every agent-deck session automatically gets a lazygit pane on attach:
 
 ```sh
 ./install.sh --agent-deck
 ```
 
-Appends a marker-scoped block to `~/.tmux.conf` (guarded by `%if`, uses `set-hook -ga`, coexists with existing hooks) and adds an optional `ad()` zsh alias to `~/.zshrc`.
+This installs:
+- A hook script at `~/.local/bin/lazygit-sidecar-hook` that checks session name (`agentdeck_*`), pane count (exactly 1), and git status before splitting.
+- A one-line tmux hook in `~/.tmux.conf` at index [99] that calls the script on every attach. Re-sourcing the config overwrites the same slot (idempotent).
+- An optional `ad()` zsh alias in `~/.zshrc` for quick session launches.
 
-The hook is idempotent: sessions that already have two or more panes are skipped, so re-attaching never stacks extra panes.
+All config changes are wrapped in markers and can be cleanly removed.
 
 ## Uninstall
 
 ```sh
 ./install.sh --uninstall              # interactive
-./install.sh --uninstall-core         # remove the binary only
+./install.sh --uninstall-core         # remove binaries only
 ./install.sh --uninstall-agent-deck   # remove hook + alias only
 ```
 
-Uninstall is marker-scoped. Only the blocks the installer added get removed. Hand-written tmux/zsh config is preserved.
+Only the marker-wrapped blocks get removed. Your hand-written tmux and zsh config stays intact.
 
-lazygit itself stays installed (it is a useful standalone tool). Remove it yourself with `brew uninstall lazygit` if you want.
+lazygit itself stays installed (it is a standalone tool). Remove it with `brew uninstall lazygit` if you want.
 
 ## Troubleshooting
 
-**`lazygit-sidecar: command not found`** — `~/.local/bin` is likely not on your PATH. Add to `~/.zshrc`:
+**`lazygit-sidecar: command not found`**
+`~/.local/bin` is likely not on your PATH. Add to `~/.zshrc`:
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
-Then `source ~/.zshrc`.
 
-**`already inside a tmux session`** — `lazygit-sidecar` does not nest. Detach the outer tmux first with `Ctrl-b d`.
+**`already inside a tmux session`**
+Detach the outer tmux first with `Ctrl-b d`, then run `lazygit-sidecar` from a plain terminal.
 
-**`tmux 3.1+ required`** — the `-l 40%` split syntax needs tmux 3.1 or newer. Upgrade with `brew upgrade tmux`.
+**`tmux 3.1+ required`**
+Upgrade with `brew upgrade tmux`.
 
-**Split is fine but lazygit shows "not a git repository"** — you launched `lazygit-sidecar` from a non-git directory. Change into a git repo first, or use it in a git worktree.
+**No lazygit pane appeared**
+You are probably not inside a git repository. `cd` into a git repo and try again.
 
 ## How it works
 
-One script, ~40 lines:
+**Standalone** (`bin/lazygit-sidecar`, ~45 lines):
 
-1. Sanity checks (`$TMUX` empty, tmux and lazygit on PATH, tmux version).
-2. `tmux new-session -d` creates a detached session with your command in pane 0.
-3. `tmux split-window -h -l 40%` adds lazygit on the right.
+1. Sanity checks: not inside tmux, tmux and lazygit on PATH, tmux 3.1+.
+2. `tmux new-session -d` with your command in pane 0.
+3. If cwd is a git repo: `tmux split-window -h -l 40%` adds lazygit on the right.
 4. `tmux attach` hands you the session.
 
-Nothing else. No daemons, no background processes, no config files. When the session ends you are back in your plain terminal.
+No daemons, no background processes, no config files.
 
-The agent-deck integration is a separate tmux hook that triggers the same layout on session attach. See `install.sh` for the exact block it appends.
+**agent-deck hook** (`bin/lazygit-sidecar-hook`):
+
+Called by tmux on every client-attach. Checks three conditions (agent-deck session, single pane, git repo) and splits only when all three are met. Lives as a standalone script to avoid tmux quoting complexity.
 
 ## License
 
