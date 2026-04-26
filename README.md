@@ -22,16 +22,41 @@ It works with any command-line tool: [Claude Code](https://claude.ai/code), [Cod
 
 macOS and Linux are supported natively. On Windows, lazygit-sidecar works inside [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
 
-On macOS, run these two lines in your terminal:
+Make sure you have [tmux](https://github.com/tmux/tmux) (3.1 or newer), [lazygit](https://github.com/jesseduffield/lazygit), and bash 4+ installed, then run:
 
 ```sh
-brew tap Predixx/tap
-brew install lazygit-sidecar
+git clone https://github.com/Predixx/lazygit-sidecar.git
+cd lazygit-sidecar
+./install.sh --core
 ```
 
-This installs lazygit-sidecar and its dependencies ([tmux](https://github.com/tmux/tmux) and [lazygit](https://github.com/jesseduffield/lazygit)) automatically.
+If your terminal says `lazygit-sidecar: command not found`, add this line to your `~/.zshrc` (or `~/.bashrc`):
 
-> Don't have Homebrew? Install it first from [brew.sh](https://brew.sh), or see [Install from source](#install-from-source) below.
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then restart your terminal.
+
+<details>
+<summary><strong>Interactive installer</strong></summary>
+
+```sh
+./install.sh
+```
+
+Walks through every step with a confirmation prompt before anything changes.
+
+</details>
+
+<details>
+<summary><strong>Manual install</strong></summary>
+
+```sh
+install -m 0755 bin/lazygit-sidecar ~/.local/bin/lazygit-sidecar
+```
+
+</details>
 
 ## Usage
 
@@ -49,39 +74,9 @@ When you're done, exit your tool as usual. Close the git view by pressing `q`.
 
 > **Note:** You need to be inside a project folder that uses git. If you're not, your command runs normally without the git view.
 
-## Install from source
-
-If you're on Linux or prefer not to use Homebrew, you can install manually.
-
-Make sure you have [tmux](https://github.com/tmux/tmux) (3.1 or newer), [lazygit](https://github.com/jesseduffield/lazygit), and bash 4+ installed, then run:
-
-```sh
-git clone https://github.com/Predixx/lazygit-sidecar.git
-cd lazygit-sidecar
-./install.sh --core
-```
-
-Or copy the script directly:
-
-```sh
-install -m 0755 bin/lazygit-sidecar ~/.local/bin/lazygit-sidecar
-```
-
-If your terminal says `lazygit-sidecar: command not found`, add this line to your `~/.zshrc` (or `~/.bashrc`):
-
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Then restart your terminal.
-
 ## Uninstall
 
 ```sh
-# Homebrew
-brew uninstall lazygit-sidecar
-
-# If installed from source
 ./install.sh --uninstall
 ```
 
@@ -89,7 +84,7 @@ brew uninstall lazygit-sidecar
 <summary><strong>Troubleshooting</strong></summary>
 
 **`lazygit-sidecar: command not found`**
-`~/.local/bin` is likely not on your PATH. See the fix in [Install from source](#install-from-source).
+`~/.local/bin` is likely not on your PATH. See the fix in [Install](#install).
 
 **`already inside a tmux session`**
 lazygit-sidecar opens its own terminal session and can't run inside one that's already open. Press `Ctrl-b d` to leave the current session first, then try again.
