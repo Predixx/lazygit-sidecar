@@ -20,6 +20,8 @@ It works with any command-line tool: [Claude Code](https://claude.ai/code), [Cod
 
 ## Install
 
+macOS and Linux are supported natively. On Windows, lazygit-sidecar works inside [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
+
 On macOS, run these two lines in your terminal:
 
 ```sh
