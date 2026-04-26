@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="lazygit-sidecar logo" width="128">
+  <img src="logo.svg" alt="lazygit-sidecar logo" width="128">
 </p>
 
 # lazygit-sidecar
