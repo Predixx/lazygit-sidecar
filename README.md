@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" alt="lazygit-sidecar logo" width="128">
+  <img src="images/logo.svg" alt="lazygit-sidecar logo" width="128">
 </p>
 
 <h1 align="center">lazygit-sidecar</h1>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="demo.png" alt="lazygit-sidecar running Codex with lazygit on the right" width="800">
+  <img src="images/demo.png" alt="lazygit-sidecar running Codex with lazygit on the right" width="800">
 </p>
 
 ## What is this?
