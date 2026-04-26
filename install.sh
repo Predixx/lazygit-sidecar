@@ -135,11 +135,8 @@ install_agent_deck() {
     echo "error: lazygit not found; run --core first." >&2
     return 1
   fi
-  local lazygit_path
-  lazygit_path=$(command -v lazygit)
 
-  # The hook calls an external script to avoid nested-quoting hell in tmux.
-  # Fixed index [99] so re-sourcing overwrites (idempotent, no accumulation).
+  mkdir -p "$BIN_DEST_DIR"
   install -m 0755 "$REPO_DIR/bin/lazygit-sidecar-hook" "$BIN_DEST_DIR/lazygit-sidecar-hook" || {
     echo "error: failed to install hook script." >&2
     return 1
@@ -178,13 +175,14 @@ uninstall_core() {
   else
     echo "$BIN_DEST not present; nothing to remove."
   fi
-  if [ -f "$BIN_DEST_DIR/lazygit-sidecar-hook" ]; then
-    rm -f "$BIN_DEST_DIR/lazygit-sidecar-hook" && echo "removed $BIN_DEST_DIR/lazygit-sidecar-hook"
-  fi
 }
 
 uninstall_agent_deck() {
   local did=0
+  if [ -f "$BIN_DEST_DIR/lazygit-sidecar-hook" ]; then
+    rm -f "$BIN_DEST_DIR/lazygit-sidecar-hook" && echo "removed $BIN_DEST_DIR/lazygit-sidecar-hook"
+    did=1
+  fi
   if has_block "$TMUX_CONF"; then
     if remove_block "$TMUX_CONF"; then
       echo "removed block from $TMUX_CONF"
@@ -267,18 +265,13 @@ EOF
   fi
 
   if ! path_contains "$BIN_DEST_DIR"; then
-    echo
     cat <<EOF
-$BIN_DEST_DIR is NOT on your PATH. I can append this line to ~/.zshrc:
 
-  export PATH="\$HOME/.local/bin:\$PATH"
+note: $BIN_DEST_DIR is not on your PATH.
+      Add this line to ~/.zshrc (or ~/.bashrc):
+
+          export PATH="\$HOME/.local/bin:\$PATH"
 EOF
-    if confirm "Append?"; then
-      printf '\n# lazygit-sidecar: ensure ~/.local/bin is on PATH\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$ZSHRC"
-      echo "Appended. Open a new terminal or: source ~/.zshrc"
-    else
-      echo "Skipped. Make sure $BIN_DEST_DIR is on PATH or the command will not be found."
-    fi
   fi
 
   step "Step 4/4: agent-deck integration (optional)"
