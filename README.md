@@ -8,6 +8,8 @@ If the working directory is not inside a git repository, lazygit is skipped and 
 
 ## Demo
 
+![lazygit-sidecar running Codex with lazygit on the right](demo.png)
+
 ```sh
 lazygit-sidecar claude
 lazygit-sidecar codex --dangerously-bypass-approvals-and-sandbox
@@ -24,6 +26,13 @@ macOS is the primary target. Linux works fine if you install tmux and lazygit yo
 
 ## Install
 
+### Homebrew (recommended)
+
+```sh
+brew tap Predixx/tap
+brew install lazygit-sidecar
+```
+
 ### Quick (macOS)
 
 ```sh
@@ -32,7 +41,7 @@ cd lazygit-sidecar
 ./install.sh --core
 ```
 
-Installs lazygit (via Homebrew if missing) and copies `bin/lazygit-sidecar` to `~/.local/bin/`. The installer warns you if `~/.local/bin` is not on your PATH and offers to add it.
+Installs lazygit (via Homebrew if missing) and copies `bin/lazygit-sidecar` to `~/.local/bin/`. The installer warns you if `~/.local/bin` is not on your PATH.
 
 ### Interactive
 
