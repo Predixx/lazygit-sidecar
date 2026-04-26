@@ -72,7 +72,7 @@ That's it. Your terminal splits in two. Work on the left, git on the right.
 
 When you're done, exit your tool as usual. Close the git view by pressing `q`.
 
-> **Note:** You need to be inside a project folder that uses git. If you're not, your command runs normally without the git view.
+> **Note:** lazygit-sidecar only opens the git view when you are inside a git repository. Outside of a git repo, your command runs normally in a plain terminal session without any split.
 
 ## Uninstall
 
@@ -93,7 +93,7 @@ lazygit-sidecar opens its own terminal session and can't run inside one that's a
 Your tmux version is too old. Update it with `brew upgrade tmux`.
 
 **No git view appeared**
-You're probably not inside a git project. Navigate to a git repository and try again.
+The git view only opens inside a git repository. Navigate to a folder that contains a `.git` directory (or is inside one) and try again. You can check with `git rev-parse --is-inside-work-tree`.
 
 </details>
 
@@ -117,7 +117,7 @@ The entire tool is a single ~45-line shell script. When you run it:
 
 1. It opens a new terminal session (using tmux).
 2. Your command runs in the left side.
-3. If you're in a git project, lazygit opens on the right side (taking up 40% of the width).
+3. If the current directory is inside a git repository, lazygit opens on the right side (taking up 40% of the width). Outside a git repo, no split happens and your command runs full-width.
 4. When both sides are closed, you're back to your normal terminal.
 
 No background processes, no config files, no daemons.
