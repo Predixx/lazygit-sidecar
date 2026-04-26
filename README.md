@@ -27,25 +27,19 @@ Make sure you have [tmux](https://github.com/tmux/tmux) (3.1 or newer), [lazygit
 ```sh
 git clone https://github.com/Predixx/lazygit-sidecar.git
 cd lazygit-sidecar
-./install.sh --core
-```
-
-If your terminal says `lazygit-sidecar: command not found`, add this line to your `~/.zshrc` (or `~/.bashrc`):
-
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Then restart your terminal.
-
-<details>
-<summary><strong>Interactive installer</strong></summary>
-
-```sh
 ./install.sh
 ```
 
-Walks through every step with a confirmation prompt before anything changes.
+The installer walks you through every step and asks for confirmation before making any changes.
+
+<details>
+<summary><strong>Non-interactive install</strong></summary>
+
+If you prefer to skip the prompts:
+
+```sh
+./install.sh --core
+```
 
 </details>
 
@@ -54,6 +48,12 @@ Walks through every step with a confirmation prompt before anything changes.
 
 ```sh
 install -m 0755 bin/lazygit-sidecar ~/.local/bin/lazygit-sidecar
+```
+
+If your terminal says `lazygit-sidecar: command not found`, add this line to your `~/.zshrc` (or `~/.bashrc`):
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 </details>
