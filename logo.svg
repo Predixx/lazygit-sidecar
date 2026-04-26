@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Left terminal pane -->
+  <rect x="8" y="8" width="52" height="112" rx="6" fill="#3d6b5a"/>
+  <rect x="8" y="8" width="52" height="14" rx="6" fill="#2e5546"/>
+  <rect x="8" y="16" width="52" height="6" fill="#2e5546"/>
+  <!-- Terminal prompt: > _ -->
+  <polyline points="22,52 30,58 22,64" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="34" y1="64" x2="44" y2="64" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Right lazygit pane -->
+  <rect x="68" y="8" width="52" height="112" rx="6" fill="#3d6b5a"/>
+  <rect x="68" y="8" width="52" height="14" rx="6" fill="#2e5546"/>
+  <rect x="68" y="16" width="52" height="6" fill="#2e5546"/>
+  <!-- Git branch (Lucide git-branch, 24x24 scaled to ~40x40, centered in right pane) -->
+  <g transform="translate(74,51) scale(1.7)" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M15 6a9 9 0 0 0-9 9V3"/>
+    <circle cx="18" cy="6" r="3"/>
+    <circle cx="6" cy="18" r="3"/>
+  </g>
+</svg>
