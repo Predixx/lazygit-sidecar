@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="lazygit-sidecar logo" width="128">
+</p>
+
 # lazygit-sidecar
 
 Persistent [lazygit](https://github.com/jesseduffield/lazygit) sidecar for any coding agent in tmux.
