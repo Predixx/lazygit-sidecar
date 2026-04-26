@@ -2,42 +2,56 @@
   <img src="logo.svg" alt="lazygit-sidecar logo" width="128">
 </p>
 
-# lazygit-sidecar
+<h1 align="center">lazygit-sidecar</h1>
 
-Persistent [lazygit](https://github.com/jesseduffield/lazygit) sidecar for any coding agent in tmux.
+<p align="center">
+  See your git changes while you code. Always.
+</p>
 
-Run `lazygit-sidecar <command>` and get your command on the left and lazygit on the right, side by side, in a single tmux session. Works with Claude Code CLI, Codex CLI, Gemini CLI, plain zsh, or anything else you want to pair with a live git view.
+<p align="center">
+  <img src="demo.png" alt="lazygit-sidecar running Codex with lazygit on the right" width="800">
+</p>
 
-If the working directory is not inside a git repository, lazygit is skipped and your command runs full-width.
+## What is this?
 
-## Demo
+When you work in the terminal, you constantly switch between your tool and git commands. lazygit-sidecar solves this by splitting your terminal in two: your tool on the left, a live git view on the right.
 
-![lazygit-sidecar running Codex with lazygit on the right](demo.png)
-
-```sh
-lazygit-sidecar claude
-lazygit-sidecar codex --dangerously-bypass-approvals-and-sandbox
-lazygit-sidecar zsh
-```
-
-## Requirements
-
-- tmux 3.1+ (needs the `-l 40%` split syntax)
-- lazygit
-- bash 4+
-
-macOS is the primary target. Linux works fine if you install tmux and lazygit yourself; the `install.sh` convenience paths assume Homebrew.
+It works with any command-line tool: [Claude Code](https://claude.ai/code), [Codex](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or just a plain shell.
 
 ## Install
 
-### Homebrew (recommended)
+On macOS, run these two lines in your terminal:
 
 ```sh
 brew tap Predixx/tap
 brew install lazygit-sidecar
 ```
 
-### Quick (macOS)
+This installs lazygit-sidecar and its dependencies ([tmux](https://github.com/tmux/tmux) and [lazygit](https://github.com/jesseduffield/lazygit)) automatically.
+
+> Don't have Homebrew? Install it first from [brew.sh](https://brew.sh), or see [Install from source](#install-from-source) below.
+
+## Usage
+
+Just put `lazygit-sidecar` in front of the command you normally use:
+
+```sh
+lazygit-sidecar claude
+lazygit-sidecar codex
+lazygit-sidecar zsh
+```
+
+That's it. Your terminal splits in two. Work on the left, git on the right.
+
+When you're done, exit your tool as usual. Close the git view by pressing `q`.
+
+> **Note:** You need to be inside a project folder that uses git. If you're not, your command runs normally without the git view.
+
+## Install from source
+
+If you're on Linux or prefer not to use Homebrew, you can install manually.
+
+Make sure you have [tmux](https://github.com/tmux/tmux) (3.1 or newer), [lazygit](https://github.com/jesseduffield/lazygit), and bash 4+ installed, then run:
 
 ```sh
 git clone https://github.com/Predixx/lazygit-sidecar.git
@@ -45,100 +59,74 @@ cd lazygit-sidecar
 ./install.sh --core
 ```
 
-Installs lazygit (via Homebrew if missing) and copies `bin/lazygit-sidecar` to `~/.local/bin/`. The installer warns you if `~/.local/bin` is not on your PATH.
-
-### Interactive
-
-```sh
-./install.sh
-```
-
-Walks through every step with a confirmation prompt before anything changes.
-
-### Manual
+Or copy the script directly:
 
 ```sh
 install -m 0755 bin/lazygit-sidecar ~/.local/bin/lazygit-sidecar
-# ensure ~/.local/bin is on PATH
 ```
 
-## Usage
-
-Pass any command. It runs in the left pane; lazygit runs in the right pane (40%).
+If your terminal says `lazygit-sidecar: command not found`, add this line to your `~/.zshrc` (or `~/.bashrc`):
 
 ```sh
-lazygit-sidecar claude
-lazygit-sidecar codex --some-flag
-lazygit-sidecar gemini
-lazygit-sidecar npm run dev
-lazygit-sidecar zsh
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The lazygit pane only appears when the working directory is inside a git repository. In non-git directories, your command runs in tmux at full width.
+Then restart your terminal.
 
-When the left command exits, its pane closes. Quit lazygit with `q`. When both panes are gone the tmux session ends and you return to your shell.
+## Uninstall
 
-`lazygit-sidecar` refuses to run inside an existing tmux session (it does not nest). Detach the outer tmux first (`Ctrl-b d`) and try again.
+```sh
+# Homebrew
+brew uninstall lazygit-sidecar
 
-## agent-deck integration (optional)
+# If installed from source
+./install.sh --uninstall
+```
 
-If you use [agent-deck](https://github.com/asheshgoplani/agent-deck), you can install a tmux `client-attached` hook so that every agent-deck session automatically gets a lazygit pane on attach:
+<details>
+<summary><strong>Troubleshooting</strong></summary>
+
+**`lazygit-sidecar: command not found`**
+`~/.local/bin` is likely not on your PATH. See the fix in [Install from source](#install-from-source).
+
+**`already inside a tmux session`**
+lazygit-sidecar opens its own terminal session and can't run inside one that's already open. Press `Ctrl-b d` to leave the current session first, then try again.
+
+**`tmux 3.1+ required`**
+Your tmux version is too old. Update it with `brew upgrade tmux`.
+
+**No git view appeared**
+You're probably not inside a git project. Navigate to a git repository and try again.
+
+</details>
+
+<details>
+<summary><strong>agent-deck integration</strong></summary>
+
+If you use [agent-deck](https://github.com/asheshgoplani/agent-deck), you can add a hook so that every agent-deck session automatically gets a git view on attach:
 
 ```sh
 ./install.sh --agent-deck
 ```
 
-This installs:
-- A hook script at `~/.local/bin/lazygit-sidecar-hook` that checks session name (`agentdeck_*`), pane count (exactly 1), and git status before splitting.
-- A one-line tmux hook in `~/.tmux.conf` at index [99] that calls the script on every attach. Re-sourcing the config overwrites the same slot (idempotent).
-- An optional `ad()` zsh alias in `~/.zshrc` for quick session launches.
+This installs a tmux hook and an `ad()` shell alias. All changes are wrapped in markers and can be cleanly removed with `./install.sh --uninstall-agent-deck`.
 
-All config changes are wrapped in markers and can be cleanly removed.
+</details>
 
-## Uninstall
+<details>
+<summary><strong>How it works</strong></summary>
 
-```sh
-./install.sh --uninstall              # interactive
-./install.sh --uninstall-core         # remove binaries only
-./install.sh --uninstall-agent-deck   # remove hook + alias only
-```
+The entire tool is a single ~45-line shell script. When you run it:
 
-Only the marker-wrapped blocks get removed. Your hand-written tmux and zsh config stays intact.
+1. It opens a new terminal session (using tmux).
+2. Your command runs in the left side.
+3. If you're in a git project, lazygit opens on the right side (taking up 40% of the width).
+4. When both sides are closed, you're back to your normal terminal.
 
-lazygit itself stays installed (it is a standalone tool). Remove it with `brew uninstall lazygit` if you want.
+No background processes, no config files, no daemons.
 
-## Troubleshooting
-
-**`lazygit-sidecar: command not found`**
-`~/.local/bin` is likely not on your PATH. Add to `~/.zshrc`:
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-**`already inside a tmux session`**
-Detach the outer tmux first with `Ctrl-b d`, then run `lazygit-sidecar` from a plain terminal.
-
-**`tmux 3.1+ required`**
-Upgrade with `brew upgrade tmux`.
-
-**No lazygit pane appeared**
-You are probably not inside a git repository. `cd` into a git repo and try again.
-
-## How it works
-
-**Standalone** (`bin/lazygit-sidecar`, ~45 lines):
-
-1. Sanity checks: not inside tmux, tmux and lazygit on PATH, tmux 3.1+.
-2. `tmux new-session -d` with your command in pane 0.
-3. If cwd is a git repo: `tmux split-window -h -l 40%` adds lazygit on the right.
-4. `tmux attach` hands you the session.
-
-No daemons, no background processes, no config files.
-
-**agent-deck hook** (`bin/lazygit-sidecar-hook`):
-
-Called by tmux on every client-attach. Checks three conditions (agent-deck session, single pane, git repo) and splits only when all three are met. Lives as a standalone script to avoid tmux quoting complexity.
+</details>
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)
