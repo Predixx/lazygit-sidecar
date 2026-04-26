@@ -14,7 +14,7 @@
 
 ## What is this?
 
-When you work in the terminal, you constantly switch between your tool and git commands. lazygit-sidecar solves this by splitting your terminal in two: your tool on the left, a live git view on the right.
+When you work in the terminal, you constantly switch between your tool and git commands. lazygit-sidecar solves this by splitting your terminal in two: your tool on the left, a live git view on the right. Outside a git repository, your tool runs normally without any split.
 
 It works with any command-line tool: [Claude Code](https://claude.ai/code), [Codex](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or just a plain shell.
 
