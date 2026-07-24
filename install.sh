@@ -11,6 +11,10 @@
 #   ./install.sh --uninstall-agent-deck Remove tmux hook + ad() alias.
 #   ./install.sh --help                 Show usage.
 #
+# Options:
+#   --width N   lazygit pane width in percent (1-99, default 30). Combine
+#               with any install mode, e.g. ./install.sh --all --width 20.
+#
 # Marker-scoped: nothing outside installer-added blocks gets touched.
 
 set -uo pipefail
@@ -26,6 +30,9 @@ ZSHRC="$HOME/.zshrc"
 MARKER_BEGIN="# >>> lazygit-sidecar agent-deck integration BEGIN"
 MARKER_END="# <<< lazygit-sidecar agent-deck integration END"
 
+DEFAULT_WIDTH=30
+SIDECAR_WIDTH=$DEFAULT_WIDTH
+
 # ---------- tiny helpers ----------
 
 step() {
@@ -39,6 +46,15 @@ confirm() {
   local answer
   read -r -p "$1 [y/N]: " answer
   [[ "$answer" =~ ^[Yy]$ ]]
+}
+
+ask_width() {
+  local answer
+  while true; do
+    read -r -p "lazygit pane width in percent [$SIDECAR_WIDTH]: " answer
+    [ -z "$answer" ] && return 0
+    set_width "$answer" && return 0
+  done
 }
 
 path_contains() {
@@ -57,22 +73,23 @@ tmux_version_ok() {
   esac
 }
 
-has_block() { grep -qF "$MARKER_BEGIN" "$1" 2>/dev/null; }
-
-append_block() {
-  local file="$1" content="$2"
-  printf '\n%s\n%s\n%s\n' "$MARKER_BEGIN" "$content" "$MARKER_END" >> "$file" \
-    || return 1
+# Matched lexically: a numeric test would let integers too large for the
+# shell fall through as valid.
+set_width() {
+  local w="${1:-}"
+  if ! [[ "$w" =~ ^([1-9]|[1-9][0-9])$ ]]; then
+    echo "error: width must be an integer between 1 and 99 (got '$w')." >&2
+    return 1
+  fi
+  SIDECAR_WIDTH="$w"
 }
 
-# Remove first complete MARKER_BEGIN..MARKER_END block. Refuses if either
-# marker is missing or the order is reversed. Uses cat-redirect so
-# symlinked dotfiles keep their symlink target.
-remove_block() {
-  local file="$1"
-  [ -f "$file" ] || return 0
-  has_block "$file" || return 0
-  local begin_line end_line
+has_block() { grep -qF "$MARKER_BEGIN" "$1" 2>/dev/null; }
+
+# Echo "BEGIN_LINE END_LINE" for the first complete marker block. Refuses if
+# either marker is missing or the order is reversed.
+block_range() {
+  local file="$1" begin_line end_line
   begin_line=$(grep -nF "$MARKER_BEGIN" "$file" | head -1 | cut -d: -f1)
   end_line=$(grep -nF "$MARKER_END" "$file" | head -1 | cut -d: -f1)
   if [ -z "$begin_line" ] || [ -z "$end_line" ]; then
@@ -83,13 +100,125 @@ remove_block() {
     echo "warn: markers in $file are out of order; file unchanged." >&2
     return 1
   fi
-  local tmp
-  tmp=$(mktemp) || return 1
-  if ! sed "${begin_line},${end_line}d" "$file" > "$tmp"; then
+  echo "$begin_line $end_line"
+}
+
+# Replace $1's content with the file at $2, which must already be complete.
+# Never pipe a generator straight into this: a producer that dies mid-stream
+# looks exactly like a short file, and the dotfile would be truncated.
+#
+# A symlinked dotfile is written through so it keeps pointing into its
+# dotfiles repo; a rename would replace the link with a regular file. Regular
+# files get an atomic same-directory rename instead.
+#
+# On failure the caller keeps $2, so never delete it here.
+commit_file() {
+  local file="$1" src="$2" tmp perms
+  if [ -L "$file" ]; then
+    cat "$src" > "$file" && return 0
+    return 1
+  fi
+  tmp=$(mktemp "$(dirname "$file")/.lazygit-sidecar.XXXXXX") || return 1
+  if ! cat "$src" > "$tmp"; then
     rm -f "$tmp"
     return 1
   fi
-  cat "$tmp" > "$file" && rm -f "$tmp"
+  if [ -e "$file" ]; then
+    # Fail closed: silently handing the user a 0600 dotfile from mktemp is
+    # worse than refusing. BSD stat first, GNU second.
+    perms=$(stat -f '%Lp' "$file" 2>/dev/null || stat -c '%a' "$file" 2>/dev/null)
+    if [ -z "$perms" ] || ! chmod "$perms" "$tmp"; then
+      rm -f "$tmp"
+      echo "error: could not preserve the permissions of $file." >&2
+      return 1
+    fi
+  fi
+  mv -f "$tmp" "$file" && return 0
+  rm -f "$tmp"
+  return 1
+}
+
+# Commit the generated file, keeping it around for recovery if the write
+# fails part-way (the copy-through path can truncate a symlink target).
+commit_or_keep() {
+  local file="$1" src="$2"
+  if ! commit_file "$file" "$src"; then
+    echo "error: failed to update $file; it may be partially written." >&2
+    echo "       The complete new content is kept at:" >&2
+    echo "       $src" >&2
+    return 1
+  fi
+  rm -f "$src"
+}
+
+# Install or update the block. An existing block is replaced where it sits,
+# so re-running with a different --width neither moves it (later user
+# settings keep overriding it) nor stacks up blank separators.
+write_block() {
+  local file="$1" content="$2" range begin_line end_line tmp
+  if [ ! -f "$file" ] || ! has_block "$file"; then
+    printf '\n%s\n%s\n%s\n' "$MARKER_BEGIN" "$content" "$MARKER_END" >> "$file" \
+      || return 1
+    return 0
+  fi
+
+  range=$(block_range "$file") || return 1
+  begin_line=${range% *}
+  end_line=${range#* }
+
+  tmp=$(mktemp) || return 1
+  # Subshell so a failing producer aborts generation instead of the installer,
+  # and so nothing is committed unless the whole file was generated.
+  if ! (
+    if [ "$begin_line" -gt 1 ]; then
+      sed -n "1,$((begin_line - 1))p" "$file" || exit 1
+    fi
+    printf '%s\n%s\n%s\n' "$MARKER_BEGIN" "$content" "$MARKER_END" || exit 1
+    sed -n "$((end_line + 1)),\$p" "$file" || exit 1
+  ) > "$tmp"; then
+    rm -f "$tmp"
+    echo "error: could not generate the new $file; file unchanged." >&2
+    return 1
+  fi
+
+  commit_or_keep "$file" "$tmp"
+}
+
+# Remove first complete MARKER_BEGIN..MARKER_END block.
+remove_block() {
+  local file="$1" range begin_line end_line tmp
+  [ -f "$file" ] || return 0
+  has_block "$file" || return 0
+  range=$(block_range "$file") || return 1
+  begin_line=${range% *}
+  end_line=${range#* }
+
+  tmp=$(mktemp) || return 1
+  if ! sed "${begin_line},${end_line}d" "$file" > "$tmp"; then
+    rm -f "$tmp"
+    echo "error: could not generate the new $file; file unchanged." >&2
+    return 1
+  fi
+
+  commit_or_keep "$file" "$tmp"
+}
+
+# Copy the standalone script with SIDECAR_WIDTH baked in as its default, so
+# --width configures the command itself and not just the agent-deck hook.
+# LAZYGIT_SIDECAR_WIDTH still overrides it per run.
+install_binary() {
+  local tmp
+  mkdir -p "$BIN_DEST_DIR" || return 1
+  tmp=$(mktemp) || return 1
+  if ! sed "s/^DEFAULT_WIDTH=.*/DEFAULT_WIDTH=$SIDECAR_WIDTH/" "$BIN_SRC" > "$tmp" ||
+     ! grep -q "^DEFAULT_WIDTH=$SIDECAR_WIDTH\$" "$tmp"; then
+    rm -f "$tmp"
+    echo "error: could not set the default width in $BIN_SRC." >&2
+    return 1
+  fi
+  install -m 0755 "$tmp" "$BIN_DEST" || { rm -f "$tmp"; return 1; }
+  rm -f "$tmp"
+  echo "installed: $BIN_DEST (lazygit pane: ${SIDECAR_WIDTH}%)"
 }
 
 # ---------- non-interactive actions ----------
@@ -115,9 +244,7 @@ install_core() {
     brew install lazygit || return 1
   fi
 
-  mkdir -p "$BIN_DEST_DIR"
-  install -m 0755 "$BIN_SRC" "$BIN_DEST" || return 1
-  echo "installed: $BIN_DEST"
+  install_binary || return 1
 
   if ! path_contains "$BIN_DEST_DIR"; then
     cat <<EOF
@@ -143,19 +270,37 @@ install_agent_deck() {
   }
   echo "installed: $BIN_DEST_DIR/lazygit-sidecar-hook"
 
-  local tmux_block
-  tmux_block="set-hook -g 'client-attached[99]' 'run-shell \"$BIN_DEST_DIR/lazygit-sidecar-hook\"'"
+  # A run-shell hook does not inherit your interactive shell environment, so
+  # the width travels as a tmux option the hook reads back. That also keeps
+  # the hook line free of a second layer of shell quoting.
+  #
+  # The path is left as an escaped \$HOME for /bin/sh to expand: run-shell
+  # applies tmux format expansion first, which would eat a '#' in the path
+  # (turning '#h' into the hostname), and an unquoted literal path would also
+  # split on spaces.
+  local tmux_block existed=0
+  tmux_block="set-option -g @lazygit-sidecar-width $SIDECAR_WIDTH
+set-hook -g 'client-attached[99]' 'run-shell \"exec \\\"\\\$HOME/.local/bin/lazygit-sidecar-hook\\\"\"'"
 
-  if has_block "$TMUX_CONF"; then
-    echo "$TMUX_CONF already contains the integration block; skipping tmux part."
+  # Rewrite an existing block instead of skipping it, so re-running with a
+  # different --width actually changes the installed hook.
+  has_block "$TMUX_CONF" && existed=1
+  write_block "$TMUX_CONF" "$tmux_block" || {
+    echo "error: failed to write to $TMUX_CONF" >&2
+    return 1
+  }
+  if [ "$existed" -eq 1 ]; then
+    echo "updated tmux hook in $TMUX_CONF (lazygit pane: ${SIDECAR_WIDTH}%)"
   else
-    append_block "$TMUX_CONF" "$tmux_block" || {
-      echo "error: failed to append to $TMUX_CONF" >&2
-      return 1
-    }
-    echo "appended tmux hook to $TMUX_CONF"
-    if tmux info >/dev/null 2>&1; then
-      tmux source-file "$TMUX_CONF" 2>/dev/null && echo "reloaded running tmux server."
+    echo "appended tmux hook to $TMUX_CONF (lazygit pane: ${SIDECAR_WIDTH}%)"
+  fi
+  if tmux info >/dev/null 2>&1; then
+    if tmux source-file "$TMUX_CONF"; then
+      echo "reloaded running tmux server."
+    else
+      echo "warn: '$TMUX_CONF' failed to reload; the running tmux server may be" >&2
+      echo "      only partially updated. Fix the error above, then run:" >&2
+      echo "          tmux source-file $TMUX_CONF" >&2
     fi
   fi
 
@@ -165,7 +310,7 @@ install_agent_deck() {
   if has_block "$ZSHRC"; then
     echo "$ZSHRC already contains the integration block; skipping zsh part."
   else
-    append_block "$ZSHRC" "$zsh_block" && echo "appended ad() alias to $ZSHRC"
+    write_block "$ZSHRC" "$zsh_block" && echo "appended ad() alias to $ZSHRC"
   fi
 }
 
@@ -189,6 +334,7 @@ uninstall_agent_deck() {
       did=1
       if tmux info >/dev/null 2>&1; then
         tmux set-hook -gu 'client-attached[99]' 2>/dev/null
+        tmux set-option -gu @lazygit-sidecar-width 2>/dev/null
       fi
     fi
   fi
@@ -255,11 +401,13 @@ I will copy:
 to:
   $BIN_DEST
 (with mode 0755). The parent directory will be created if missing.
+
+The git view opens as a vertical split on the right. Choose how wide it
+should be, or press Enter for the default.
 EOF
+  ask_width
   if confirm "Install?"; then
-    mkdir -p "$BIN_DEST_DIR"
-    install -m 0755 "$BIN_SRC" "$BIN_DEST" || { echo "copy failed."; exit 1; }
-    echo "installed: $BIN_DEST"
+    install_binary || { echo "copy failed."; exit 1; }
   else
     echo "Skipped."
   fi
@@ -296,6 +444,8 @@ Installation complete. Test:
 
 (If PATH was updated, open a new terminal or run: source ~/.zshrc)
 
+Change the width later with: $0 --all --width N
+Override it for a single run: LAZYGIT_SIDECAR_WIDTH=50 lazygit-sidecar zsh
 Uninstall later with: $0 --uninstall
 EOF
 }
@@ -332,12 +482,35 @@ EOF
 }
 
 usage() {
-  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # ---------- dispatch ----------
 
-case "${1:-}" in
+ACTION=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --width)   shift; set_width "${1:-}" || exit 2 ;;
+    --width=*) set_width "${1#*=}" || exit 2 ;;
+    --core|--agent-deck|--all|--uninstall|--uninstall-core|--uninstall-agent-deck)
+      if [ -n "$ACTION" ]; then
+        echo "error: $ACTION and $1 cannot be combined." >&2
+        exit 2
+      fi
+      ACTION="$1"
+      ;;
+    --help|-h) usage; exit 0 ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+case "$ACTION" in
   "")                     interactive_install ;;
   --core)                 install_core ;;
   --agent-deck)           install_agent_deck ;;
@@ -345,10 +518,4 @@ case "${1:-}" in
   --uninstall)            interactive_uninstall ;;
   --uninstall-core)       uninstall_core ;;
   --uninstall-agent-deck) uninstall_agent_deck ;;
-  --help|-h)              usage ;;
-  *)
-    echo "unknown option: $1" >&2
-    usage >&2
-    exit 2
-    ;;
 esac

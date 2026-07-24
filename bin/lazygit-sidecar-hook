@@ -2,6 +2,23 @@
 # lazygit-sidecar-hook: called by a tmux client-attached hook.
 # Checks if the attached session is an agent-deck session, has only one pane,
 # and is inside a git repo. If all true, splits the window and opens lazygit.
+#
+# Pane width in percent (1-99), highest precedence first:
+#   1. LAZYGIT_SIDECAR_WIDTH
+#   2. the @lazygit-sidecar-width tmux option, which install.sh writes
+#   3. DEFAULT_WIDTH below
+# A run-shell hook does not inherit your interactive shell environment, so
+# the tmux option is what './install.sh --width N' actually configures.
+# Change it at any time with: tmux set -g @lazygit-sidecar-width N
+
+DEFAULT_WIDTH=30
+
+# Matched lexically: a numeric test would let integers too large for the
+# shell fall through as valid.
+width="${LAZYGIT_SIDECAR_WIDTH:-$(tmux show-option -gqv @lazygit-sidecar-width)}"
+if ! [[ "$width" =~ ^([1-9]|[1-9][0-9])$ ]]; then
+  width="$DEFAULT_WIDTH"
+fi
 
 session=$(tmux display-message -p '#{session_name}')
 panes=$(tmux display-message -p '#{window_panes}')
@@ -11,5 +28,5 @@ path=$(tmux display-message -p '#{pane_current_path}')
 [ "$panes" != "1" ] && exit 0
 git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
-tmux split-window -h -l 40% -c "$path" lazygit
+tmux split-window -h -l "${width}%" -c "$path" lazygit
 tmux select-pane -L
