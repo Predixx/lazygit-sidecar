@@ -6,17 +6,24 @@
 
 set -euo pipefail
 
+# Width of the lazygit pane, in percent. './install.sh --width N' rewrites
+# the next line when it copies this script, so keep it a single assignment.
+DEFAULT_WIDTH=30
+
 if [ $# -eq 0 ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  cat <<'EOF'
+  cat <<EOF
 Usage: lazygit-sidecar <command> [args...]
 
 Opens a new tmux session with your command on the left and lazygit on the
-right (40%). Works with any CLI: claude, codex, gemini, npm, zsh, ...
+right. Works with any CLI: claude, codex, gemini, npm, zsh, ...
+
+Environment:
+  LAZYGIT_SIDECAR_WIDTH   lazygit pane width in percent (1-99, default $DEFAULT_WIDTH)
 
 Examples:
   lazygit-sidecar claude
   lazygit-sidecar codex --dangerously-bypass-approvals-and-sandbox
-  lazygit-sidecar zsh
+  LAZYGIT_SIDECAR_WIDTH=20 lazygit-sidecar zsh
 EOF
   [ $# -eq 0 ] && exit 2 || exit 0
 fi
@@ -41,6 +48,14 @@ case "$ver" in
     ;;
 esac
 
+# Matched lexically: a numeric test would let integers too large for the
+# shell fall through as valid.
+width="${LAZYGIT_SIDECAR_WIDTH:-$DEFAULT_WIDTH}"
+if ! [[ "$width" =~ ^([1-9]|[1-9][0-9])$ ]]; then
+  echo "lazygit-sidecar: ignoring invalid LAZYGIT_SIDECAR_WIDTH='$width'; using ${DEFAULT_WIDTH}%." >&2
+  width="$DEFAULT_WIDTH"
+fi
+
 session="lazygit-sidecar-$$"
 
 # Quote each arg so it survives tmux -> shell re-parsing.
@@ -49,7 +64,7 @@ printf -v cmd '%q ' "$@"
 tmux new-session -d -s "$session" "$cmd"
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  tmux split-window -h -l 40% -t "$session" lazygit
+  tmux split-window -h -l "${width}%" -t "$session" lazygit
   tmux select-pane -L -t "$session"
 fi
 

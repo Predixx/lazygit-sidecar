@@ -22,7 +22,7 @@ It works with any command-line tool: [Claude Code](https://claude.ai/code), [Cod
 
 macOS and Linux are supported natively. On Windows, lazygit-sidecar works inside [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
 
-Make sure you have [tmux](https://github.com/tmux/tmux) (3.1 or newer), [lazygit](https://github.com/jesseduffield/lazygit), and bash 4+ installed, then run:
+Make sure you have [tmux](https://github.com/tmux/tmux) (3.1 or newer), [lazygit](https://github.com/jesseduffield/lazygit), and bash (3.2 or newer, so macOS's built-in bash is fine) installed, then run:
 
 ```sh
 git clone https://github.com/Predixx/lazygit-sidecar.git
@@ -74,6 +74,42 @@ When you're done, exit your tool as usual. Close the git view by pressing `q`.
 
 > **Note:** lazygit-sidecar only opens the git view when you are inside a git repository. Outside of a git repo, your command runs normally in a plain terminal session without any split.
 
+## Width of the git view
+
+The git view takes 30% of the terminal width by default. Pick a different width at install time:
+
+```sh
+./install.sh --width 20
+```
+
+Combine `--width` with any install mode (`--core`, `--agent-deck`, `--all`), and re-run it whenever you want a different width. The interactive installer asks for it too.
+
+For a single run, set `LAZYGIT_SIDECAR_WIDTH` (1-99); it overrides the installed width:
+
+```sh
+LAZYGIT_SIDECAR_WIDTH=50 lazygit-sidecar claude
+```
+
+If you use the agent-deck integration, you can also change the width of the next split without reinstalling:
+
+```sh
+tmux set -g @lazygit-sidecar-width 20
+```
+
+Any value outside 1-99 is ignored and the default is used.
+
+<details>
+<summary><strong>Where the width is stored</strong></summary>
+
+`--width` writes to the two places that are actually read at runtime:
+
+- the copy of `lazygit-sidecar` in `~/.local/bin` gets the value as its built-in default (the script in this repo stays at 30);
+- the agent-deck hook gets it from the `@lazygit-sidecar-width` tmux option in the installer's `~/.tmux.conf` block.
+
+The hook needs the tmux option because a `run-shell` hook is executed by the tmux server and does not see the environment of the shell you are attaching from.
+
+</details>
+
 ## Uninstall
 
 ```sh
@@ -113,14 +149,14 @@ This installs a tmux hook and an `ad()` shell alias. All changes are wrapped in 
 <details>
 <summary><strong>How it works</strong></summary>
 
-The entire tool is a single ~45-line shell script. When you run it:
+The entire tool is a single short shell script. When you run it:
 
 1. It opens a new terminal session (using tmux).
 2. Your command runs in the left side.
-3. If the current directory is inside a git repository, lazygit opens on the right side (taking up 40% of the width). Outside a git repo, no split happens and your command runs full-width.
+3. If the current directory is inside a git repository, lazygit opens on the right side (taking up 30% of the width by default). Outside a git repo, no split happens and your command runs full-width.
 4. When both sides are closed, you're back to your normal terminal.
 
-No background processes, no config files, no daemons.
+No background processes, no daemons, and no config file of its own.
 
 </details>
 
