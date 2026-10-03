@@ -344,7 +344,9 @@ uninstall_agent_deck() {
       did=1
     fi
   fi
-  [ $did -eq 0 ] && echo "no integration blocks found; nothing to remove."
+  if [ $did -eq 0 ]; then
+    echo "no integration blocks found; nothing to remove."
+  fi
 }
 
 # ---------- interactive flow ----------
