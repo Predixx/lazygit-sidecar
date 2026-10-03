@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-10-03
+
+### Fixed
+
+- `./install.sh --uninstall-agent-deck` exited with status 1 after a successful uninstall. The function's last command was a test that fails whenever something was removed, and its status became the script's exit code.
+
 ## [1.1.0] - 2026-07-25
 
 ### Added
@@ -63,6 +69,7 @@ Initial release.
 - Idempotent: re-attaching or re-sourcing never stacks extra panes
 - Interactive installer, plus `--core` / `--agent-deck` / `--all` flags
 
+[1.1.1]: https://github.com/Predixx/lazygit-sidecar/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Predixx/lazygit-sidecar/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Predixx/lazygit-sidecar/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/Predixx/lazygit-sidecar/releases/tag/v0.1.0
